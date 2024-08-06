@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenLayers Map with Time Slider</title>
+    <link rel="stylesheet" href="https://openlayers.org/en/latest/css/ol.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.5.1/nouislider.min.css">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+        }
+        #map {
+            width: 100%;
+            height: 80%;
+        }
+        #slider-container {
+            width: 100%;
+            height: 20%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        #slider {
+            width: 80%;
+            margin: 10px 0;
+        }
+        #year-label {
+            font-size: 16px;
+            margin-left: 10px;
+        }
+        #slider-labels {
+            display: flex;
+            width: 80%;
+            justify-content: space-between;
+        }
+        .noUi-tooltip {
+            display: none; /* Hide tooltips */
+        }
+        .attribution-container {
+            position: absolute;
+            bottom: 5%;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 5px;
+            z-index: 1000;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/ol/dist/ol.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.5.1/nouislider.min.js"></script>
+</head>
+<body>
+    <div id="map" class="map"></div>
+    <!-- Slider Container -->
+    <div id="slider-container">
+        <div id="slider"></div>
+        <div id="slider-labels">
+            <span>2020</span><span>2021</span><span>2022</span><span>2023</span><span>2024</span>
+        </div>
+        <span id="year-label">Year: </span>
+    </div>
+    <script>
+        // Execute this function when the DOM content is fully loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // Define the point data with latitude, longitude, and timestamp
+            // This is regular JavaScript syntax to create an array of objects
+            const pointData = [
+                { latitude: 40.7128, longitude: -74.0060, timestamp: '2020-01-01T12:00:00Z' },
+                { latitude: 34.0522, longitude: -118.2437, timestamp: '2020-06-01T12:00:00Z' },
+                { latitude: 41.8781, longitude: -87.6298, timestamp: '2021-01-01T12:00:00Z' },
+                { latitude: 29.7604, longitude: -95.3698, timestamp: '2021-06-01T12:00:00Z' },
+                { latitude: 39.7392, longitude: -104.9903, timestamp: '2022-01-01T12:00:00Z' },
+                { latitude: 32.7767, longitude: -96.7970, timestamp: '2022-06-01T12:00:00Z' },
+                { latitude: 37.7749, longitude: -122.4194, timestamp: '2023-01-01T12:00:00Z' },
+                { latitude: 47.6062, longitude: -122.3321, timestamp: '2023-06-01T12:00:00Z' },
+                { latitude: 25.7617, longitude: -80.1918, timestamp: '2024-01-01T12:00:00Z' },
+                { latitude: 33.748995, longitude: -84.387982, timestamp: '2024-06-01T12:00:00Z' }
+            ];
+
+            // Convert timestamps to Unix time (milliseconds since 1970-01-01)
+            // This is regular JavaScript to map over the pointData array and return a new array of timestamps
+            const times = pointData.map(point => new Date(point.timestamp).getTime());
+            // Find the minimum and maximum times for slider range
+            const minTime = Math.min(...times);
+            const maxTime = Math.max(...times);
+
+            // Initialize the OpenLayers map
+            // 'new ol.Map' is part of the OpenLayers library
+            const map = new ol.Map({
+                target: 'map',  // The 'target' is the id of the DOM element where the map will be rendered
+                layers: [
+                    new ol.layer.Tile({
+                        source: new ol.source.OSM()  // Use OpenStreetMap as the tile source
+                    })
+                ],
+                view: new ol.View({
+                    center: ol.proj.fromLonLat([-74.0060, 40.7128]),  // Center the map on New York City; conversion from lon/lat to map projection
+                    zoom: 4  // Set the initial zoom level
+                })
+            });
+
+            // Create a vector source to hold point features
+            // 'new ol.source.Vector' and 'new ol.layer.Vector' are part of the OpenLayers library
+            const vectorSource = new ol.source.Vector({});
+            const vectorLayer = new ol.layer.Vector({
+                source: vectorSource,
+                // Style the points as red circles
+                style: new ol.style.Style({
+                    image: new ol.style.Circle({
+                        radius: 5,
+                        fill: new ol.style.Fill({ color: 'red' })
+                    })
+                })
+            });
+
+            // Add the vector layer to the map
+            map.addLayer(vectorLayer);
+
+            // Create a container for the popup
+            const container = document.createElement('div');
+            container.className = 'ol-popup';  // Set the class to style this element as a popup
+
+            // Create a content div for the popup
+            const content = document.createElement('div');
+            container.appendChild(content);
+
+            // Create a closer link to close the popup
+            const closer = document.createElement('a');
+            closer.href = '#';
+            closer.className = 'ol-popup-closer';
+            container.appendChild(closer);
+
+            // Create an overlay for the popup
+            const popup = new ol.Overlay({
+                element: container,
+                autoPan: true,  // Automatically pan the map to keep the popup in view
+                autoPanAnimation: { duration: 250 }  // Set the duration of the pan animation
+            });
+            map.addOverlay(popup);
+
+            // Close the popup when the closer is clicked (regular JavaScript)
+            closer.onclick = function() {
+                popup.setPosition(undefined);  // Hide the popup
+                closer.blur();
+                return false;
+            };
+
+            // Function to get visible points based on the slider value
+            // This is a regular JavaScript function
+            function getVisiblePoints(startTime, endTime) {
+                // Filter the pointData array to only include points within the time range
+                return pointData.filter(point => {
+                    const pointTime = new Date(point.timestamp).getTime();
+                    return pointTime >= startTime && pointTime <= endTime;
+                });
+            }
+
+            // Function to update points and the year label based on the slider
+            // This is a regular JavaScript function
+            function updatePoints(startTime, endTime) {
+                vectorSource.clear();  // Clear existing points (OpenLayers method)
+                const visiblePoints = getVisiblePoints(startTime, endTime);
+                visiblePoints.forEach(point => {
+                    // For each visible point, create a new OpenLayers feature
+                    const feature = new ol.Feature({
+                        geometry: new ol.geom.Point(ol.proj.fromLonLat([point.longitude, point.latitude])),  // Convert lon/lat to map projection
+                        date: new Date(point.timestamp).toISOString().split('T')[0]  // For popup display, format the date
+                    });
+                    vectorSource.addFeature(feature);  // Add the feature to the vector source
+                });
+
+                // Update the text label to show the currently displayed range
+                document.getElementById('year-label').innerText = `Showing points from ${new Date(startTime).getUTCFullYear()} to ${new Date(endTime).getUTCFullYear()}`;
+            }
+
+            // Initialize the noUiSlider for the time range (part of the noUiSlider library)
+            const slider = document.getElementById('slider');
+            noUiSlider.create(slider, {
+                start: [minTime, maxTime],  // Initial slider positions (start and end)
+                connect: true,  // Display a bar between the handles
+                range: {
+                    'min': minTime,  // Minimum slider value
+                    'max': maxTime   // Maximum slider value
+                },
+                tooltips: [true, true],  // Show tooltips for both handles
+                format: {
+                    to: value => Math.floor(value),  // Convert tooltip value to a whole number (year)
+                    from: value => value // Use the value as is for calculations
+                }
+            });
+
+            // Event listener for updating points on slider 'update' event (part of noUiSlider)
+            slider.noUiSlider.on('update', function(values, handle) {
+                const startTime = parseInt(values[0]);  // Convert slider value to integer (start time)
+                const endTime = parseInt(values[1]);    // Convert slider value to integer (end time)
+                updatePoints(startTime, endTime);  // Update the points shown on the map
+            });
+
+            // Show popups on point click (OpenLayers method)
+            map.on('singleclick', function(evt) {
+                // Get the feature at the clicked pixel
+                const feature = map.forEachFeatureAtPixel(evt.pixel, function(feature) {
+                    return feature;
+                });
+
+                if (feature) {
+                    // Get the coordinates of the feature
+                    const coordinates = feature.getGeometry().getCoordinates();
+                    // Set the content of the popup to the feature's date
+                    content.innerHTML = '<p>Date: ' + feature.get('date') + '</p>';
+                    // Position the popup at the feature's coordinates
+                    popup.setPosition(coordinates);
+                }
+            });
+
+            // Initial call to display all points
+            updatePoints(minTime, maxTime);
+        });
+    </script>
+</body>
+</html>
